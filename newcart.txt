@@ -1,0 +1,115 @@
+import toast, { Toaster } from "react-hot-toast";
+
+const CartPage = () => {
+    const {
+        state: { userDetails, cart: cartData },
+        dispatch,
+    } = useContext(AppContext);
+
+    const [isProcessing, setIsProcessing] = useState(false);
+    const [address, setAddress] = useState("");
+    const [phoneNumber, setPhoneNumber] = useState(userDetails.phoneNumber || "");
+    const [city, setCity] = useState("");
+
+    // Handle Payment
+    const handlePayment = async (amount, cartId, address, phoneNumber, city) => {
+        setIsProcessing(true); // Start processing
+        try {
+            // Validate parameters
+            if (!amount || !cartId) {
+                throw new Error("Invalid amount or cart ID");
+            }
+
+            const res = await fetch(`${import.meta.env.VITE_BE_URL}/api/payment/order`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ amount }),
+            });
+
+            if (!res.ok) {
+                const errorData = await res.json();
+                throw new Error(errorData.message || "Failed to create order");
+            }
+
+            const data = await res.json();
+            console.log("Order Data:", data);
+
+            // Proceed with payment verification
+            handlePaymentVerify(data.data, cartId, address, phoneNumber, city);
+        } catch (error) {
+            console.error("Payment Error:", error);
+            toast.error(error.message || "Failed to initiate payment. Please try again.");
+        } finally {
+            setIsProcessing(false); // Stop processing
+        }
+    };
+
+    // Handle Payment Verification
+    const handlePaymentVerify = (data, cartId, address, phoneNumber, city, userDetails) => {
+        if (typeof window.Razorpay === "undefined") {
+            toast.error("Razorpay script not loaded. Please try again.");
+            return;
+        }
+
+        const options = {
+            key: import.meta.env.VITE_RAZORPAY_KEY_ID,
+            amount: data.amount,
+            currency: data.currency,
+            name: "FoodieCart",
+            description: "Order Payment",
+            order_id: data.id,
+            prefill: {
+                name: userDetails.name,
+                email: userDetails.email,
+                contact: phoneNumber,
+                address: address,
+                city: city,
+            },
+            handler: async (response) => {
+                console.log("Payment Response:", response);
+                try {
+                    const res = await fetch(`${import.meta.env.VITE_BE_URL}/api/payment/verify`, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify({
+                            razorpay_order_id: response.razorpay_order_id,
+                            razorpay_payment_id: response.razorpay_payment_id,
+                            razorpay_signature: response.razorpay_signature,
+                            address,
+                            phoneNumber,
+                            city,
+                        }),
+                    });
+
+                    const verifyData = await res.json();
+                    console.log("Verification Response:", verifyData);
+
+                    if (verifyData.message) {
+                        toast.success(verifyData.message);
+                        // Clear the cart on successful payment
+                        dispatch({ type: "load_cart", payload: null });
+                    } else {
+                        toast.error("Payment verification failed. Please try again.");
+                    }
+                } catch (error) {
+                    console.error("Verification Error:", error);
+                    toast.error("Failed to verify payment. Please contact support.");
+                }
+            },
+            theme: {
+                color: "#4CAF50",
+            },
+        };
+
+        const rzp1 = new window.Razorpay(options);
+        rzp1.on("payment.failed", (response) => {
+            console.error("Payment Failed:", response.error);
+            toast.error("Payment failed. Please try again.");
+        });
+
+        rzp1.open();
+    };
