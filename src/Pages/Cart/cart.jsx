@@ -9,7 +9,7 @@ export default function CartPage() {
         state: { userDetails, cart: cartData },
         dispatch,
     } = useContext(AppContext);
-    const [amount, setAmount] = useState(200);
+    const [amount, setAmount] = useState();
     const [isProcessing, setIsProcessing] = useState(false);
     const [address, setAddress] = useState("");
     const [phoneNumber, setPhoneNumber] = useState(userDetails.phoneNumber || "");
